@@ -248,13 +248,6 @@ class TreeGenerator:
                  
                 # Calculate child length
                 child_length = child_info['length']
-                if self.options.type == TreeType.Evergreen:
-                    # This logic needs to be consistent with how child_branch_start was used
-                    # in calculate_child_branches to determine section_idx.
-                    # For now, let's assume child_info doesn't contain child_branch_start directly.
-                    # If it did, we'd use (1.0 - child_branch_start)
-                    # For now, we'll use a simplified approach or rely on the default length.
-                    pass # Evergreen length adjustment is complex without child_branch_start here.
 
                 new_branch = Branch(
                     origin=section_origin.copy(), # Use current section's origin
@@ -610,6 +603,11 @@ class TreeGenerator:
             # Radial angle
             radial_angle = 2.0 * math.pi * (radial_offset + i / child_count)
             
+            # Calculate length (incorporating Evergreen logic here where we have the start position)
+            length = self.options.branch.length.get(level, 5)
+            if self.options.type == TreeType.Evergreen:
+                length *= (1.0 - child_branch_start)
+            
             # Store info. Note: Origin/Orientation must be calculated from the parent section at generation time.
             # We only store the "Intent" to spawn here.
             # We can calculate 'orientation' based on parent later.
@@ -619,8 +617,8 @@ class TreeGenerator:
             branch_slots[section_idx] = {
                 'radial_angle': radial_angle,
                 'level': level,
-                'length': self.options.branch.length.get(level, 5),
-                'radius': self.options.branch.radius.get(level, 0.5) * branch.radius, # Approx radius scaling? EZ Tree logic: radius * radiusMod
+                'length': length,
+                'radius_scale': self.options.branch.radius.get(level, 0.5), 
                 'sectionCount': self.options.branch.sections.get(level, 6),
                 'segmentCount': self.options.branch.segments.get(level, 4)
             }

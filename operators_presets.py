@@ -25,10 +25,14 @@ class EZTree_OT_ApplyPresetMenu(bpy.types.Operator):
     )
 
     def execute(self, context):
-        props = context.scene.eztree_props
+        # Determine target
+        obj = context.active_object
+        if obj and hasattr(obj, "eztree_props") and "TreeBranch" in obj.name:
+             props = obj.eztree_props
+        else:
+             props = context.scene.eztree_props
+
         apply_preset(props, self.preset_enum)
-        # Auto-generate after preset load? Maybe optional. User usually clicks Generate.
-        # Let's just load parameters for now to be safe.
         self.report({'INFO'}, f"Loaded preset: {self.preset_enum}")
         return {'FINISHED'}
 

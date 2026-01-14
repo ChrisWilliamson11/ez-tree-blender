@@ -5,111 +5,110 @@ from bpy.props import (
 )
 from .enums import BarkType, Billboard, LeafType, TreeType
 
+# Callback for property updates
+def update_tree(self, context):
+    # Avoid updates when not appropriate or if checks fail
+    if not context.active_object:
+        return
+    
+    # Check if the active object is an EZ-Tree object (has the props)
+    # The 'self' here is the PropertyGroup (e.g. EZTree_BarkProps), not the Object.
+    # We need to find the root object.
+    # Usually we can't easily traverse up from PropertyGroup to Object owner in `update`.
+    # BUT, if we edit from UI, context.active_object is the one being edited.
+    
+    # We trigger an operator or function to regenerate logic.
+    # "eztree.regenerate"
+    
+    # Verify we are actually editing an object with our props
+    if hasattr(context.active_object, "eztree_props"):
+         # Trigger regeneration
+         # We use a timer or direct call? Direct call might lag UI.
+         # For "Live" feel, direct is okay for simple trees, maybe laggy for complex.
+         # Let's try direct call to an update function.
+         # We need to import the regeneration logic.
+         from .operators import update_existing_tree
+         update_existing_tree(context.active_object)
+
 # Helper to map enums to Blender EnumProperty items
 def enum_to_items(enum_cls):
     return [(e.value, e.name, "") for e in enum_cls]
 
 class EZTree_BarkProps(bpy.types.PropertyGroup):
-    type: EnumProperty(
-        items=enum_to_items(BarkType),
-        name="Bark Type",
-        default=BarkType.Oak.value
-    )
-    tint: FloatVectorProperty(
-        name="Tint",
-        subtype='COLOR',
-        default=(1.0, 1.0, 1.0),
-        min=0, max=1
-    )
-    flatShading: BoolProperty(name="Flat Shading", default=False)
-    textured: BoolProperty(name="Textured", default=True)
-    textureScaleX: FloatProperty(name="Texture Scale X", default=1.0)
-    textureScaleY: FloatProperty(name="Texture Scale Y", default=1.0)
+    type: EnumProperty(items=enum_to_items(BarkType), name="Bark Type", default=BarkType.Oak.value, update=update_tree)
+    tint: FloatVectorProperty(name="Tint", subtype='COLOR', default=(1.0, 1.0, 1.0), min=0, max=1, update=update_tree)
+    flatShading: BoolProperty(name="Flat Shading", default=False, update=update_tree)
+    textured: BoolProperty(name="Textured", default=True, update=update_tree)
+    textureScaleX: FloatProperty(name="Texture Scale X", default=1.0, update=update_tree)
+    textureScaleY: FloatProperty(name="Texture Scale Y", default=1.0, update=update_tree)
 
 class EZTree_BranchProps(bpy.types.PropertyGroup):
-    levels: IntProperty(name="Levels", default=3, min=0, max=4)
+    levels: IntProperty(name="Levels", default=3, min=0, max=4, update=update_tree)
     
-    # We need to flatten the dict structure for Blender props.
-    # Arrays can work if size is fixed, but dictionary keys like '1', '2' map to levels.
-    # Simpler to have explicit props for each level or just arrays.
-    # Level max is usually around 3 or 4.
-    # Using arrays for compact UI.
+    angle_1: FloatProperty(name="Angle L1", default=70, update=update_tree)
+    angle_2: FloatProperty(name="Angle L2", default=60, update=update_tree)
+    angle_3: FloatProperty(name="Angle L3", default=60, update=update_tree)
     
-    # Angle (Levels 1-3)
-    angle_1: FloatProperty(name="Angle L1", default=70)
-    angle_2: FloatProperty(name="Angle L2", default=60)
-    angle_3: FloatProperty(name="Angle L3", default=60)
+    children_0: IntProperty(name="Children L0", default=7, update=update_tree)
+    children_1: IntProperty(name="Children L1", default=7, update=update_tree)
+    children_2: IntProperty(name="Children L2", default=5, update=update_tree)
     
-    # Children (Levels 0-2)
-    children_0: IntProperty(name="Children L0", default=7)
-    children_1: IntProperty(name="Children L1", default=7)
-    children_2: IntProperty(name="Children L2", default=5)
+    force_dir: FloatVectorProperty(name="Force Direction", default=(0, 1, 0), update=update_tree)
+    force_strength: FloatProperty(name="Force Strength", default=0.01, update=update_tree)
     
-    # Force
-    force_dir: FloatVectorProperty(name="Force Direction", default=(0, 1, 0))
-    force_strength: FloatProperty(name="Force Strength", default=0.01)
+    gnarliness_0: FloatProperty(name="Gnarliness L0", default=0.15, update=update_tree)
+    gnarliness_1: FloatProperty(name="Gnarliness L1", default=0.2, update=update_tree)
+    gnarliness_2: FloatProperty(name="Gnarliness L2", default=0.3, update=update_tree)
+    gnarliness_3: FloatProperty(name="Gnarliness L3", default=0.02, update=update_tree)
     
-    # Gnarliness (0-3)
-    gnarliness_0: FloatProperty(name="Gnarliness L0", default=0.15)
-    gnarliness_1: FloatProperty(name="Gnarliness L1", default=0.2)
-    gnarliness_2: FloatProperty(name="Gnarliness L2", default=0.3)
-    gnarliness_3: FloatProperty(name="Gnarliness L3", default=0.02)
+    length_0: FloatProperty(name="Length L0", default=20, update=update_tree)
+    length_1: FloatProperty(name="Length L1", default=20, update=update_tree)
+    length_2: FloatProperty(name="Length L2", default=10, update=update_tree)
+    length_3: FloatProperty(name="Length L3", default=1, update=update_tree)
     
-    # Length (0-3)
-    length_0: FloatProperty(name="Length L0", default=20)
-    length_1: FloatProperty(name="Length L1", default=20)
-    length_2: FloatProperty(name="Length L2", default=10)
-    length_3: FloatProperty(name="Length L3", default=1)
+    radius_0: FloatProperty(name="Radius L0", default=1.5, update=update_tree)
+    radius_1: FloatProperty(name="Radius L1", default=0.7, update=update_tree)
+    radius_2: FloatProperty(name="Radius L2", default=0.7, update=update_tree)
+    radius_3: FloatProperty(name="Radius L3", default=0.7, update=update_tree)
     
-    # Radius (0-3)
-    radius_0: FloatProperty(name="Radius L0", default=1.5)
-    radius_1: FloatProperty(name="Radius L1", default=0.7)
-    radius_2: FloatProperty(name="Radius L2", default=0.7)
-    radius_3: FloatProperty(name="Radius L3", default=0.7)
+    sections_0: IntProperty(name="Sections L0", default=12, update=update_tree)
+    sections_1: IntProperty(name="Sections L1", default=10, update=update_tree)
+    sections_2: IntProperty(name="Sections L2", default=8, update=update_tree)
+    sections_3: IntProperty(name="Sections L3", default=6, update=update_tree)
     
-    # Sections (0-3)
-    sections_0: IntProperty(name="Sections L0", default=12)
-    sections_1: IntProperty(name="Sections L1", default=10)
-    sections_2: IntProperty(name="Sections L2", default=8)
-    sections_3: IntProperty(name="Sections L3", default=6)
+    segments_0: IntProperty(name="Segments L0", default=8, update=update_tree)
+    segments_1: IntProperty(name="Segments L1", default=6, update=update_tree)
+    segments_2: IntProperty(name="Segments L2", default=4, update=update_tree)
+    segments_3: IntProperty(name="Segments L3", default=3, update=update_tree)
     
-    # Segments (0-3)
-    segments_0: IntProperty(name="Segments L0", default=8)
-    segments_1: IntProperty(name="Segments L1", default=6)
-    segments_2: IntProperty(name="Segments L2", default=4)
-    segments_3: IntProperty(name="Segments L3", default=3)
+    start_1: FloatProperty(name="Start L1", default=0.4, min=0, max=1, update=update_tree)
+    start_2: FloatProperty(name="Start L2", default=0.3, min=0, max=1, update=update_tree)
+    start_3: FloatProperty(name="Start L3", default=0.3, min=0, max=1, update=update_tree)
     
-    # Start (1-3)
-    start_1: FloatProperty(name="Start L1", default=0.4, min=0, max=1)
-    start_2: FloatProperty(name="Start L2", default=0.3, min=0, max=1)
-    start_3: FloatProperty(name="Start L3", default=0.3, min=0, max=1)
+    taper_0: FloatProperty(name="Taper L0", default=0.7, min=0, max=1, update=update_tree)
+    taper_1: FloatProperty(name="Taper L1", default=0.7, min=0, max=1, update=update_tree)
+    taper_2: FloatProperty(name="Taper L2", default=0.7, min=0, max=1, update=update_tree)
+    taper_3: FloatProperty(name="Taper L3", default=0.7, min=0, max=1, update=update_tree)
     
-    # Taper (0-3)
-    taper_0: FloatProperty(name="Taper L0", default=0.7, min=0, max=1)
-    taper_1: FloatProperty(name="Taper L1", default=0.7, min=0, max=1)
-    taper_2: FloatProperty(name="Taper L2", default=0.7, min=0, max=1)
-    taper_3: FloatProperty(name="Taper L3", default=0.7, min=0, max=1)
-    
-    # Twist (0-3)
-    twist_0: FloatProperty(name="Twist L0", default=0)
-    twist_1: FloatProperty(name="Twist L1", default=0)
-    twist_2: FloatProperty(name="Twist L2", default=0)
-    twist_3: FloatProperty(name="Twist L3", default=0)
+    twist_0: FloatProperty(name="Twist L0", default=0, update=update_tree)
+    twist_1: FloatProperty(name="Twist L1", default=0, update=update_tree)
+    twist_2: FloatProperty(name="Twist L2", default=0, update=update_tree)
+    twist_3: FloatProperty(name="Twist L3", default=0, update=update_tree)
 
 class EZTree_LeafProps(bpy.types.PropertyGroup):
-    type: EnumProperty(items=enum_to_items(LeafType), name="Leaf Type", default=LeafType.Oak.value)
-    billboard: EnumProperty(items=enum_to_items(Billboard), name="Billboard", default=Billboard.Double.value)
-    angle: FloatProperty(name="Angle", default=10)
-    count: IntProperty(name="Count", default=5) # Default increased slightly for visibility? No keep default 1? 1 is very low. JS default was 1? No check default. JS default was 1.
-    start: FloatProperty(name="Start", default=0, min=0, max=1)
-    size: FloatProperty(name="Size", default=2.5)
-    sizeVariance: FloatProperty(name="Size Variance", default=0.7)
-    tint: FloatVectorProperty(name="Tint", subtype='COLOR', default=(1,1,1), min=0, max=1)
-    alphaTest: FloatProperty(name="Alpha Test", default=0.5, min=0, max=1)
+    type: EnumProperty(items=enum_to_items(LeafType), name="Leaf Type", default=LeafType.Oak.value, update=update_tree)
+    billboard: EnumProperty(items=enum_to_items(Billboard), name="Billboard", default=Billboard.Double.value, update=update_tree)
+    angle: FloatProperty(name="Angle", default=10, update=update_tree)
+    count: IntProperty(name="Count", default=5, update=update_tree)
+    start: FloatProperty(name="Start", default=0, min=0, max=1, update=update_tree)
+    size: FloatProperty(name="Size", default=2.5, update=update_tree)
+    sizeVariance: FloatProperty(name="Size Variance", default=0.7, update=update_tree)
+    tint: FloatVectorProperty(name="Tint", subtype='COLOR', default=(1,1,1), min=0, max=1, update=update_tree)
+    alphaTest: FloatProperty(name="Alpha Test", default=0.5, min=0, max=1, update=update_tree)
 
 class EZTree_Props(bpy.types.PropertyGroup):
-    seed: IntProperty(name="Seed", default=0)
-    type: EnumProperty(items=enum_to_items(TreeType), name="Tree Type", default=TreeType.Deciduous.value)
+    seed: IntProperty(name="Seed", default=0, update=update_tree)
+    type: EnumProperty(items=enum_to_items(TreeType), name="Tree Type", default=TreeType.Deciduous.value, update=update_tree)
     bark: PointerProperty(type=EZTree_BarkProps)
     branch: PointerProperty(type=EZTree_BranchProps)
     leaves: PointerProperty(type=EZTree_LeafProps)
@@ -120,9 +119,14 @@ def register():
     bpy.utils.register_class(EZTree_LeafProps)
     bpy.utils.register_class(EZTree_Props)
     
+    # Register on Object as well
+    bpy.types.Object.eztree_props = PointerProperty(type=EZTree_Props)
+    # Keeping scene for initial creation defaults? Actually, we can just use a temporary operator prop or 
+    # keep using Scene props for the "create new" Settings, and then copy them to Object.
     bpy.types.Scene.eztree_props = PointerProperty(type=EZTree_Props)
 
 def unregister():
+    del bpy.types.Object.eztree_props
     del bpy.types.Scene.eztree_props
     
     bpy.utils.unregister_class(EZTree_Props)

@@ -295,55 +295,7 @@ class TreeGenerator:
         # Only at max level?
         if branch.level == self.options.branch.levels:
             self.generate_leaves(sections, rng_geo)
-        elif branch.level < self.options.branch.levels:
-            # Logic for "Leaves on branches"? 
-            # EZ Tree usually leaves only at max level plus tips?
-            # But if options say so? 
-            # Let's stick to existing logic:
-            # existing logic: check child_count?
-            # Wait, `generate_child_branches` handles branches.
-            # `generate_leaves` handles leaves.
-            # In original code, `generate_leaves` was called if `level == max`.
-            # And `child branches` if `level < max`.
-            pass
-
-    def calculate_sections(self, branch, rng):
-        # Just placeholder if any logic needed rng
-        # Currently length etc passed in Branch.
-        pass
-
-    def calculate_child_branches(self, branch, rng):
-        # Returns dict {section_index: branch_info}
-        child_branches = {}
-        count = self.options.branch.children.get(branch.level, 0)
-        level = branch.level + 1
-        
-        radial_offset = rng.random(1, 0)
-        
-        branch_slots = {}
-        for i in range(count):
-             start_val = self.options.branch.start.get(level, 0.3)
-             child_branch_start = rng.random(1.0, start_val)
-             section_idx = math.floor(child_branch_start * branch.sectionCount)
-             section_idx = max(0, min(section_idx, branch.sectionCount - 1))
-             
-             # Store this decision
-             radial_angle = 2.0 * math.pi * (radial_offset + i / count)
-             
-             length = self.options.branch.length.get(level, 5)
-             if self.options.type == TreeType.Evergreen:
-                 length *= (1.0 - child_branch_start) # Evergreen length depends on start position
-             
-             branch_slots[section_idx] = {
-                 'radial_angle': radial_angle,
-                 'level': level,
-                 'length': length,
-                 'radius_scale': self.options.branch.radius.get(level, 0.5), 
-                 'sectionCount': self.options.branch.sections.get(level, 6),
-                 'segmentCount': self.options.branch.segments.get(level, 4)
-             }
-             
-        return branch_slots
+            
 
     def generate_branch_indices(self, index_offset, branch):
         # N = segmentCount + 1 (because of duplicated vertex for UVs)
@@ -364,85 +316,6 @@ class TreeGenerator:
                 # Quad: v1, v2, v4, v3 
                 
                 self.branches_indices.append((v1, v2, v4, v3))
-
-    def generate_child_branches(self, count, level, sections):
-        radial_offset = self.rng.random(1, 0)
-        
-        for i in range(count):
-            start_val = self.options.branch.start.get(level, 0.3)
-            # RNG random(max, min)
-            # JS: this.rng.random(1.0, this.options.branch.start[level]);
-            child_branch_start = self.rng.random(1.0, start_val)
-            
-            # Interpolation logic
-            section_idx = math.floor(child_branch_start * (len(sections) - 1))
-            section_idx = max(0, min(section_idx, len(sections) - 2))
-            
-            sectionA = sections[section_idx]
-            sectionB = sections[section_idx + 1]
-            
-            # Alpha
-            denom = (1 / (len(sections) - 1))
-            if denom == 0: denom = 1
-            alpha = (child_branch_start - (section_idx / (len(sections) - 1))) / denom
-            alpha = max(0, min(alpha, 1))
-
-            # Lerp Origin
-            origin = sectionA['origin'].lerp(sectionB['origin'], alpha)
-            
-            # Lerp Radius
-            radius_parent = (1 - alpha) * sectionA['radius'] + alpha * sectionB['radius']
-            radius = self.options.branch.radius.get(level, 0.5) * radius_parent
-            
-            # Lerp Orientation
-            qA = sectionA['orientation'].to_quaternion()
-            qB = sectionB['orientation'].to_quaternion()
-            parent_orientation = qB.slerp(qA, alpha).to_euler()
-            
-            # Calc Child Orientation
-            radial_angle = 2.0 * math.pi * (radial_offset + i / count)
-            
-            # JS Quats: q3 * q2 * q1 (applied in reverse order?? Three.js multiply order is local/global?)
-            # JS: q3.multiply(q2.multiply(q1))
-            
-            # q1: Axis X, angle from settings
-            angle_deg = self.options.branch.angle.get(level, 60)
-            q1 = Quaternion(Vector((1, 0, 0)), math.radians(angle_deg))
-            
-            # q2: Axis Y, radial angle
-            q2 = Quaternion(Vector((0, 1, 0)), radial_angle)
-            
-            # q3: Parent orientation
-            q3 = parent_orientation.to_quaternion()
-            
-            # Blender Quat Multiplication: qA @ qB rotates by qB then qA?
-            # Or qA @ point? 
-            # In Blender, q1 @ q2 means apply q2 first then q1? 
-            # "The multiplication of two quaternions corresponds to the composition of rotations (the rotation on the right is applied first)."
-            # So A @ B means B then A.
-            
-            # JS: q3.multiply(q2) -> q3 becomes q3*q2. Applied q2 then q3? 
-            # Three.js: a.multiply(b) "Sets this quaternion to a x b."
-            # "Rotations are applied to the arguments from right to left." => a * b means b then a.
-            # So q3 * (q2 * q1) means apply q1, then q2, then q3.
-            
-            # So in Blender: q3 @ q2 @ q1
-            final_quat = q3 @ q2 @ q1
-            child_orientation = final_quat.to_euler()
-            
-            length = self.options.branch.length.get(level, 5)
-            if self.options.type == TreeType.Evergreen:
-                length *= (1.0 - child_branch_start)
-                
-            self.branch_queue.append(Branch(
-                origin=origin,
-                orientation=child_orientation,
-                length=length,
-                radius=radius,
-                level=level,
-                sectionCount=self.options.branch.sections.get(level, 6),
-                segmentCount=self.options.branch.segments.get(level, 4)
-            ))
 
     def generate_leaves(self, sections, rng):
         radial_offset = rng.random(1, 0)
@@ -628,6 +501,4 @@ class TreeGenerator:
             
         return branch_slots
 
-    def calculate_sections(self, branch, rng):
-        pass
 

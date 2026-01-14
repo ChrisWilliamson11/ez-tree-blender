@@ -81,13 +81,30 @@ def update_existing_tree(obj):
 
          if old_mesh.users == 0:
             bpy.data.meshes.remove(old_mesh)
-    elif new_leaf_mesh:
-         # If leaf object didn't exist but now we have leaves?
-         # Create it and parent it
-         # This is complex for "update". For now assume structure exists.
-         # If leaves count becomes 0, we might want to hide/remove leaf obj options.
-         # Creating new leaf obj implies linking to scene?
-         pass
+    elif new_leaf_mesh and len(new_leaf_mesh.vertices) > 0:
+         # If leaf object didn't exist but now we have leaves, create it.
+         leaf_obj = bpy.data.objects.new("TreeLeaf", new_leaf_mesh)
+         
+         # Link to parent's collection
+         if branch_obj and branch_obj.users_collection:
+             branch_obj.users_collection[0].objects.link(leaf_obj)
+         else:
+             bpy.context.collection.objects.link(leaf_obj)
+             
+         # Parent and Transform
+         if branch_obj:
+             leaf_obj.parent = branch_obj
+             leaf_obj.location = (0, 0, 0)
+             leaf_obj.rotation_euler = (0, 0, 0)
+             leaf_obj.scale = (1, 1, 1)
+             
+         # Assign Material
+         leaf_mat = ensure_material("EZTree_Leaf", props.leaves.tint,
+                                    type_name=props.leaves.type,
+                                    is_bark=False,
+                                    props=props.leaves)
+         leaf_obj.data.materials.append(leaf_mat)
+
 
 import os
 

@@ -33,7 +33,28 @@ class EZTree_OT_AddWind(bpy.types.Operator):
             # We need to know the property name.
             # Usually we can look at `mod.keys()`
             # Safe bet: #frame / 24.
-            pass # Skipping auto-driver for now to keep it simple, or user can animate.
+            # Find "Time" input identifier
+            ng = mod.node_group
+            time_id = None
+            
+            # Blender 4.0+
+            if hasattr(ng, "interface"):
+                for item in ng.interface.items_tree:
+                    if item.name == "Time":
+                        time_id = item.identifier
+                        break
+            # Blender < 4.0
+            elif hasattr(ng, "inputs"):
+                for item in ng.inputs:
+                    if item.name == "Time":
+                        time_id = item.identifier
+                        break
+            
+            if time_id:
+                # Add Driver: frame / 24.0
+                d = mod.driver_add(f'["{time_id}"]')
+                d.driver.expression = "frame / 24.0"
+
         
         return {'FINISHED'}
 

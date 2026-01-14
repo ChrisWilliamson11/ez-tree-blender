@@ -12,14 +12,21 @@ import bpy
 from . import properties
 from . import ui
 from . import operators
+from . import operators_presets
+from . import operators_wind
+from . import presets
 
 def register():
     properties.register()
     operators.register()
+    operators_presets.register()
+    operators_wind.register()
     ui.register()
 
 def unregister():
     ui.unregister()
+    operators_wind.unregister()
+    operators_presets.unregister()
     operators.unregister()
     properties.unregister()
 

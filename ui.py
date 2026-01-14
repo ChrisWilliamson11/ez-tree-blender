@@ -14,7 +14,15 @@ class EZTree_PT_Main(EZTree_PT_Base, bpy.types.Panel):
         layout = self.layout
         props = context.scene.eztree_props
         
+        # Presets Menu
+        row = layout.row()
+        row.label(text="Presets:")
+        row.operator_menu_enum("eztree.apply_preset_menu", "preset_enum", text="Select Preset")
+
+        layout.separator()
+        
         layout.operator("eztree.generate", text="Generate Tree", icon='OUTLINER_OB_MESH')
+        layout.operator("eztree.add_wind", text="Add Wind Animation", icon='FORCE_WIND')
         
         layout.prop(props, "seed")
         layout.prop(props, "type")

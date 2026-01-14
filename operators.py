@@ -113,95 +113,227 @@ def ensure_material(name, color, type_name=None, is_bark=True, props=None):
         mat.use_nodes = True
         
     tree = mat.node_tree
-    bsdf = tree.nodes.get('Principled BSDF')
+    
+    # Get or create Principled BSDF
+    bsdf = None
+    for n in tree.nodes:
+        if n.type == 'BSDF_PRINCIPLED':
+            bsdf = n
+            break
     if not bsdf:
         bsdf = tree.nodes.new('ShaderNodeBsdfPrincipled')
+        bsdf.location = (0, 0)
         
-    # Base Color
-    bsdf.inputs['Base Color'].default_value = (color[0], color[1], color[2], 1.0)
+    # Get Link to Output
+    # Ensure BSDF is connected to Output
+    out_node = None
+    for n in tree.nodes:
+        if n.type == 'OUTPUT_MATERIAL':
+            out_node = n
+            break
+    if not out_node:
+        out_node = tree.nodes.new('ShaderNodeOutputMaterial')
+        out_node.location = (300, 0)
+        
+    if not bsdf.outputs[0].is_linked:
+        tree.links.new(bsdf.outputs[0], out_node.inputs[0])
+        
+    # Helper to clean up specific nodes (simple approach: clear all except Output and BSDF? No, expensive.
+    # Reuse nodes if they exist.)
     
-    # Textures
-    if type_name and props and getattr(props, 'textured', True): # Bark usually has 'textured' prop, leaves implied?
-        base_path = get_asset_path()
-        try:
-            if is_bark:
-                # Bark Textures: {type}_color_1k.jpg, etc.
-                # Types: oak, birch, pine, willow
-                # Enum values might be lowercase? Checked enums.py?
-                # Using type_name directly.
-                t = type_name.lower()
-                
-                # Color
-                color_path = os.path.join(base_path, "bark", f"{t}_color_1k.jpg")
-                img = load_image(color_path)
-                if img:
-                     tex = tree.nodes.new('ShaderNodeTexImage')
-                     tex.image = img
-                     tex.location = (-300, 300)
-                     # Tint Mix?
-                     # MixRGB (Multiply) Color * Tint
-                     mix = tree.nodes.new('ShaderNodeMixRGB')
-                     mix.blend_type = 'MULTIPLY'
-                     mix.inputs[0].default_value = 1.0 # Fac
-                     mix.inputs[2].default_value = (color[0], color[1], color[2], 1.0)
-                     tree.links.new(tex.outputs['Color'], mix.inputs[1])
-                     tree.links.new(mix.outputs['Color'], bsdf.inputs['Base Color'])
-                     
-                # Normal
-                norm_path = os.path.join(base_path, "bark", f"{t}_normal_1k.jpg")
-                img_norm = load_image(norm_path)
-                if img_norm:
-                     tex_n = tree.nodes.new('ShaderNodeTexImage')
-                     tex_n.image = img_norm
-                     tex_n.image.colorspace_settings.name = 'Non-Color'
-                     tex_n.location = (-300, 0)
-                     
-                     nmap = tree.nodes.new('ShaderNodeNormalMap')
-                     nmap.location = (-100, 0)
-                     tree.links.new(tex_n.outputs['Color'], nmap.inputs['Color'])
-                     tree.links.new(nmap.outputs['Normal'], bsdf.inputs['Normal'])
-                     
-                # Roughness
-                rough_path = os.path.join(base_path, "bark", f"{t}_roughness_1k.jpg")
-                img_r = load_image(rough_path)
-                if img_r:
-                     tex_r = tree.nodes.new('ShaderNodeTexImage')
-                     tex_r.image = img_r
-                     tex_r.image.colorspace_settings.name = 'Non-Color'
-                     tex_r.location = (-300, -300)
-                     tree.links.new(tex_r.outputs['Color'], bsdf.inputs['Roughness'])
-                     
-            else:
-                # Leaves: {type}_color.png
-                # Alpha test? 
-                t = type_name.lower()
-                color_path = os.path.join(base_path, "leaves", f"{t}_color.png")
-                img = load_image(color_path)
-                if img:
-                     tex = tree.nodes.new('ShaderNodeTexImage')
-                     tex.image = img
-                     tex.location = (-300, 300)
-                     
-                     # Mix Tint
-                     mix = tree.nodes.new('ShaderNodeMixRGB')
-                     mix.blend_type = 'MULTIPLY'
-                     mix.inputs[0].default_value = 1.0
-                     mix.inputs[2].default_value = (color[0], color[1], color[2], 1.0)
-                     
-                     tree.links.new(tex.outputs['Color'], mix.inputs[1])
-                     tree.links.new(mix.outputs['Color'], bsdf.inputs['Base Color'])
-                     
-                     # Alpha
-                     tree.links.new(tex.outputs['Alpha'], bsdf.inputs['Alpha'])
-                     
-                     # Material Settings for Alpha
-                     mat.blend_method = 'CLIP'
-                     mat.shadow_method = 'CLIP'
-                     
-        except Exception as e:
-            print(f"Error loading texture: {e}")
+    # For simplicity in this "Live" caching: 
+    # Check if we already have the setup. 
+    # We identify nodes by Name/Label or checking links.
+    
+    # Texture Logic
+    should_texture = type_name and props and getattr(props, 'textured', True)
+    
+    # Mapping and Coord Nodes
+    tex_coord = tree.nodes.get('EZ_TexCoord')
+    mapping = tree.nodes.get('EZ_Mapping')
+    
+    if should_texture:
+        if not tex_coord:
+            tex_coord = tree.nodes.new('ShaderNodeTexCoord')
+            tex_coord.name = 'EZ_TexCoord'
+            tex_coord.location = (-900, 0)
+            
+        if not mapping:
+            mapping = tree.nodes.new('ShaderNodeMapping')
+            mapping.name = 'EZ_Mapping'
+            mapping.label = "EZ Mapping"
+            mapping.location = (-700, 0)
+            tree.links.new(tex_coord.outputs['UV'], mapping.inputs['Vector'])
+            
+        # Update Scale
+        if is_bark and props:
+            # Check for scale props
+            sx = getattr(props, 'textureScaleX', 1.0)
+            sy = getattr(props, 'textureScaleY', 1.0)
+            mapping.inputs['Scale'].default_value = (sx, sy, 1.0)
+        else:
+            mapping.inputs['Scale'].default_value = (1.0, 1.0, 1.0)
+    
+    # Function to get/create Image Node
+    def get_image_node(node_name, y_loc):
+        node = tree.nodes.get(node_name)
+        newly_created = False
+        if not node:
+            node = tree.nodes.new('ShaderNodeTexImage')
+            node.name = node_name
+            node.location = (-500, y_loc)
+            newly_created = True
+        return node, newly_created
+
+    base_path = get_asset_path()
+    
+    # --- Base Color ---
+    # Always needed. 
+    # If Textured: Mix(Multiply, Image, Color) -> BSDF
+    # If Not: Color -> BSDF
+    
+    # Check for Mix Node
+    mix_color = tree.nodes.get('EZ_MixColor')
+    tex_color = tree.nodes.get('EZ_TexColor')
+    
+    if should_texture and is_bark:
+         t = type_name.lower()
+         img_path = os.path.join(base_path, "bark", f"{t}_color_1k.jpg")
+         img = load_image(img_path)
+         
+         if img:
+             tex_color, _ = get_image_node('EZ_TexColor', 300)
+             tex_color.image = img
+             tree.links.new(mapping.outputs['Vector'], tex_color.inputs['Vector'])
+             
+             if not mix_color:
+                 mix_color = tree.nodes.new('ShaderNodeMixRGB')
+                 mix_color.name = 'EZ_MixColor'
+                 mix_color.blend_type = 'MULTIPLY'
+                 mix_color.inputs[0].default_value = 1.0
+                 mix_color.location = (-200, 300)
+             
+             mix_color.inputs[2].default_value = (color[0], color[1], color[2], 1.0)
+             tree.links.new(tex_color.outputs['Color'], mix_color.inputs[1])
+             tree.links.new(mix_color.outputs['Color'], bsdf.inputs['Base Color'])
+         else:
+             # Fallback to color
+             bsdf.inputs['Base Color'].default_value = (color[0], color[1], color[2], 1.0)
+             
+    elif should_texture and not is_bark: # Leaves
+         t = type_name.lower()
+         img_path = os.path.join(base_path, "leaves", f"{t}_color.png")
+         img = load_image(img_path)
+         
+         if img:
+             tex_color, _ = get_image_node('EZ_TexColor', 300)
+             tex_color.image = img
+             # Leaves typically use default mapping (UV map creates individual leaf UVs)
+             # But if we want scale? Usually scale 1 for leaves on quad.
+             tree.links.new(mapping.outputs['Vector'], tex_color.inputs['Vector'])
+             
+             if not mix_color:
+                 mix_color = tree.nodes.new('ShaderNodeMixRGB')
+                 mix_color.name = 'EZ_MixColor'
+                 mix_color.blend_type = 'MULTIPLY'
+                 mix_color.inputs[0].default_value = 1.0
+                 mix_color.location = (-200, 300)
+             
+             mix_color.inputs[2].default_value = (color[0], color[1], color[2], 1.0)
+             tree.links.new(tex_color.outputs['Color'], mix_color.inputs[1])
+             tree.links.new(mix_color.outputs['Color'], bsdf.inputs['Base Color'])
+             
+             # Alpha
+             tree.links.new(tex_color.outputs['Alpha'], bsdf.inputs['Alpha'])
+             mat.blend_method = 'CLIP'
+         else:
+             bsdf.inputs['Base Color'].default_value = (color[0], color[1], color[2], 1.0)
+             
+    else:
+        # Not textured or Texture failed
+        # Remove Mix if exists? Or just unhook.
+        bsdf.inputs['Base Color'].default_value = (color[0], color[1], color[2], 1.0)
+        # Unlink BSDF Color input if linked
+        if bsdf.inputs['Base Color'].is_linked:
+             tree.links.remove(bsdf.inputs['Base Color'].links[0])
+
+
+    # --- Normal Map (Bark Only) ---
+    tex_norm = tree.nodes.get('EZ_TexNorm')
+    norm_map = tree.nodes.get('EZ_NormMap')
+    
+    if should_texture and is_bark:
+         t = type_name.lower()
+         img_path = os.path.join(base_path, "bark", f"{t}_normal_1k.jpg")
+         img = load_image(img_path)
+         if img:
+             tex_norm, _ = get_image_node('EZ_TexNorm', 0)
+             tex_norm.image = img
+             tex_norm.image.colorspace_settings.name = 'Non-Color'
+             tree.links.new(mapping.outputs['Vector'], tex_norm.inputs['Vector'])
+             
+             if not norm_map:
+                 norm_map = tree.nodes.new('ShaderNodeNormalMap')
+                 norm_map.name = 'EZ_NormMap'
+                 norm_map.location = (-200, 0)
+            
+             tree.links.new(tex_norm.outputs['Color'], norm_map.inputs['Color'])
+             tree.links.new(norm_map.outputs['Normal'], bsdf.inputs['Normal'])
+    else:
+         # Unlink Normal
+         if bsdf.inputs['Normal'].is_linked:
+             tree.links.remove(bsdf.inputs['Normal'].links[0])
+             
+    # --- Roughness (Bark Only) ---
+    tex_rough = tree.nodes.get('EZ_TexRough')
+    if should_texture and is_bark:
+         t = type_name.lower()
+         img_path = os.path.join(base_path, "bark", f"{t}_roughness_1k.jpg")
+         img = load_image(img_path)
+         if img:
+             tex_rough, _ = get_image_node('EZ_TexRough', -300)
+             tex_rough.image = img
+             tex_rough.image.colorspace_settings.name = 'Non-Color'
+             tree.links.new(mapping.outputs['Vector'], tex_rough.inputs['Vector'])
+             tree.links.new(tex_rough.outputs['Color'], bsdf.inputs['Roughness'])
+    else:
+         if bsdf.inputs['Roughness'].is_linked:
+             tree.links.remove(bsdf.inputs['Roughness'].links[0])
 
     return mat
+
+def update_existing_materials(obj):
+    if not obj or not hasattr(obj, "eztree_props"):
+        return
+    
+    props = obj.eztree_props
+    
+    # Update Bark
+    # Need to find bark material. Usually slot 0 on branch obj.
+    # Determine which object is branch.
+    branch_obj = None
+    leaf_obj = None
+    
+    if "TreeBranch" in obj.name:
+        branch_obj = obj
+        if obj.children and "TreeLeaf" in obj.children[0].name:
+             leaf_obj = obj.children[0]
+    elif "TreeLeaf" in obj.name and obj.parent:
+        leaf_obj = obj
+        branch_obj = obj.parent
+        
+    if branch_obj:
+        ensure_material("EZTree_Bark", props.bark.tint, 
+                        type_name=props.bark.type, 
+                        is_bark=True, 
+                        props=props.bark)
+                        
+    if leaf_obj:
+        ensure_material("EZTree_Leaf", props.leaves.tint, 
+                       type_name=props.leaves.type, 
+                       is_bark=False, 
+                       props=props.leaves)
+
 
 class EZTree_OT_Generate(bpy.types.Operator):
     bl_idname = "eztree.generate"

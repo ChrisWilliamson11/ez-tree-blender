@@ -5,10 +5,10 @@ from bpy.props import (
 )
 from .enums import BarkType, Billboard, LeafType, TreeType
 
-# Callback for property updates
+# Callback for property updates (Geometry)
 def update_tree(self, context):
     # Avoid updates when not appropriate or if checks fail
-    if not context.active_object:
+    if not context.active_object or getattr(context.scene, "eztree_loading_preset", False):
         return
     
     # Check if the active object is an EZ-Tree object (has the props)
@@ -30,17 +30,26 @@ def update_tree(self, context):
          from .operators import update_existing_tree
          update_existing_tree(context.active_object)
 
+# Callback for material updates (Performance Optimization)
+def update_material(self, context):
+    if not context.active_object or getattr(context.scene, "eztree_loading_preset", False):
+        return
+    
+    if hasattr(context.active_object, "eztree_props"):
+        from .operators import update_existing_materials
+        update_existing_materials(context.active_object)
+
 # Helper to map enums to Blender EnumProperty items
 def enum_to_items(enum_cls):
     return [(e.value, e.name, "") for e in enum_cls]
 
 class EZTree_BarkProps(bpy.types.PropertyGroup):
-    type: EnumProperty(items=enum_to_items(BarkType), name="Bark Type", default=BarkType.Oak.value, update=update_tree)
-    tint: FloatVectorProperty(name="Tint", subtype='COLOR', default=(1.0, 1.0, 1.0), min=0, max=1, update=update_tree)
+    type: EnumProperty(items=enum_to_items(BarkType), name="Bark Type", default=BarkType.Oak.value, update=update_material)
+    tint: FloatVectorProperty(name="Tint", subtype='COLOR', default=(1.0, 1.0, 1.0), min=0, max=1, update=update_material)
     flatShading: BoolProperty(name="Flat Shading", default=False, update=update_tree)
-    textured: BoolProperty(name="Textured", default=True, update=update_tree)
-    textureScaleX: FloatProperty(name="Texture Scale X", default=1.0, update=update_tree)
-    textureScaleY: FloatProperty(name="Texture Scale Y", default=1.0, update=update_tree)
+    textured: BoolProperty(name="Textured", default=True, update=update_material)
+    textureScaleX: FloatProperty(name="Texture Scale X", default=1.0, update=update_material)
+    textureScaleY: FloatProperty(name="Texture Scale Y", default=1.0, update=update_material)
 
 class EZTree_BranchProps(bpy.types.PropertyGroup):
     levels: IntProperty(name="Levels", default=3, min=0, max=4, update=update_tree)
@@ -96,15 +105,15 @@ class EZTree_BranchProps(bpy.types.PropertyGroup):
     twist_3: FloatProperty(name="Twist L3", default=0, update=update_tree)
 
 class EZTree_LeafProps(bpy.types.PropertyGroup):
-    type: EnumProperty(items=enum_to_items(LeafType), name="Leaf Type", default=LeafType.Oak.value, update=update_tree)
+    type: EnumProperty(items=enum_to_items(LeafType), name="Leaf Type", default=LeafType.Oak.value, update=update_material)
     billboard: EnumProperty(items=enum_to_items(Billboard), name="Billboard", default=Billboard.Double.value, update=update_tree)
     angle: FloatProperty(name="Angle", default=10, update=update_tree)
     count: IntProperty(name="Count", default=5, update=update_tree)
     start: FloatProperty(name="Start", default=0, min=0, max=1, update=update_tree)
     size: FloatProperty(name="Size", default=2.5, update=update_tree)
     sizeVariance: FloatProperty(name="Size Variance", default=0.7, update=update_tree)
-    tint: FloatVectorProperty(name="Tint", subtype='COLOR', default=(1,1,1), min=0, max=1, update=update_tree)
-    alphaTest: FloatProperty(name="Alpha Test", default=0.5, min=0, max=1, update=update_tree)
+    tint: FloatVectorProperty(name="Tint", subtype='COLOR', default=(1,1,1), min=0, max=1, update=update_material)
+    alphaTest: FloatProperty(name="Alpha Test", default=0.5, min=0, max=1, update=update_material)
 
 class EZTree_Props(bpy.types.PropertyGroup):
     seed: IntProperty(name="Seed", default=0, update=update_tree)

@@ -35,46 +35,76 @@ class TreeGenerator:
         
         self.branch_queue = []
 
-        self.rng = RNG(self.options.seed)
-
         # Create the trunk
-        self.branch_queue.append(
-            Branch(
-                origin=Vector((0, 0, 0)),
-                orientation=Euler((0, 0, 0)),
-                length=self.options.branch.length[0],
-                radius=self.options.branch.radius[0],
-                level=0,
-                sectionCount=self.options.branch.sections[0],
-                segmentCount=self.options.branch.segments[0],
-            )
+        trunk_seed = self.options.seed
+        
+        trunk = Branch(
+            origin=Vector((0, 0, 0)),
+            orientation=Euler((0, 0, 0)),
+            length=self.options.branch.length[0],
+            radius=self.options.branch.radius[0],
+            level=0,
+            sectionCount=self.options.branch.sections[0],
+            segmentCount=self.options.branch.segments[0],
         )
+        trunk.seed = trunk_seed
+        
+        self.branch_queue.append(trunk)
 
         while len(self.branch_queue) > 0:
             branch = self.branch_queue.pop(0)
-            self.generate_branch(branch)
+            self.generate_branch(branch) # seed is in branch.seed
 
         return self.create_mesh()
 
-    def generate_branch(self, branch: Branch):
-        index_offset = len(self.branches_verts) # Vertices are Vectors, so just count of items
+    def generate_branch(self, branch: Branch, seed=None):
+        # Use passed seed or branch's stored seed (logic for root)
+        if seed is None:
+            if hasattr(branch, 'seed'):
+                seed = branch.seed
+            else:
+                seed = self.options.seed
         
-        section_orientation = branch.orientation.copy() # Euler
-        section_origin = branch.origin.copy() # Vector
+        # 1. Independent RNGs to ensure stability regardless of child recursion
+        # Geometry RNG: Used for sections, gnarliness affecting current branch shape
+        rng_geo = RNG(seed)
         
-        # Calculate section length
-        divisor = (self.options.branch.levels - 1) if self.options.type == TreeType.Deciduous else 1
-        # Avoid division by zero if levels is 1 (trunk only)
-        if divisor == 0: divisor = 1
+        # Structure RNG: Used for child placement. 
+        # Making it separate ensures that if we change logic/count of children, geometry doesn't shift
+        rng_struct = RNG((seed * 1664525 + 1013904223) & 0xFFFFFFFF)
         
-        section_length = branch.length / branch.sectionCount / divisor
+        # Calculate sections (Geometry) - currently a placeholder, actual logic is in the loop
+        self.calculate_sections(branch, rng_geo)
+        
+        index_offset = len(self.branches_verts)
+        
+        # Calculate children locations (Structure)
+        child_branch_slots = {}
+        if branch.level < self.options.branch.levels:
+            child_branch_slots = self.calculate_child_branches(branch, rng_struct)
 
+        # Generate Geometry Loop
+        # We reuse rng_geo to ensure consistent gnarliness along the branch
+        # (It must match the state it would have if calculate_sections was run... wait.
+        # calculate_sections just consumes some RNG. rng_geo continues from there. Correct.)
+        
         sections = []
-
+        
+        # Pre-calculate section radiuses/orientations to store in 'sections' list for leaves?
+        # Actually logic mixes geometry generation with section storage.
+        
+        section_orientation = branch.orientation.copy()
+        section_origin = branch.origin.copy()
+        
+        # ... logic for section_length ...
+        divisor = (self.options.branch.levels - 1) if self.options.type == TreeType.Deciduous else 1
+        if divisor == 0: divisor = 1
+        section_length = branch.length / branch.sectionCount / divisor
+        
         for i in range(branch.sectionCount + 1):
             section_radius = branch.radius
-
-            # Radius tapering logic
+            
+            # ... Taper logic ...
             if i == branch.sectionCount and branch.level == self.options.branch.levels:
                 section_radius = 0.001
             elif self.options.type == TreeType.Deciduous:
@@ -83,90 +113,53 @@ class TreeGenerator:
             elif self.options.type == TreeType.Evergreen:
                 section_radius *= (1 - (i / branch.sectionCount))
 
-            # Generate segments
+            # Segments Generation (Vertices)
             first_vertex_data = None
-            
-            # Helper to rotate vector by Euler (Blender specific)
-            # Blender Euler rotation order is usually XYZ, Three.js default is XYZ.
-            # mathutils Euler can be converted to Matrix or Quaternion for rotation.
-            
-            # We need a consistent rotation handling.
-            # Tree.js: vertex.applyEuler(sectionOrientation)
-            # Blender: vector.rotate(sectionOrientation) works if sectionOrientation is Euler? No.
-            # vector.rotate(rotation) where rotation is Euler, Quat, or Axis-Angle. 
-            
             for j in range(branch.segmentCount):
                 angle = (2.0 * math.pi * j) / branch.segmentCount
-                
-                # Create vertex (in local circle space)
-                # Three.js: new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).multiplyScalar(sectionRadius)
-                # Note: Y-up in Three.js? The cylinder seems to grow along Y?
-                # "new THREE.Vector3(0, sectionLength, 0).applyEuler(sectionOrientation)" -> Growing along Y.
-                # So the circle is in XZ plane.
-                
                 vertex = Vector((math.cos(angle), 0, math.sin(angle))) * section_radius
-                
-                # Apply rotation
-                # Logic: vertex.applyEuler(sectionOrientation)
                 vertex.rotate(section_orientation)
-                
-                # Translate
                 vertex += section_origin
-                
-                # Normal (normalized direction from center)
+                 
                 normal = Vector((math.cos(angle), 0, math.sin(angle)))
                 normal.rotate(section_orientation)
                 normal.normalize()
-                
+                 
                 uv = Vector((j / branch.segmentCount, 0 if (i % 2 == 0) else 1))
-                
+                 
                 self.branches_verts.append(vertex)
-                # self.branches_normals.append(normal) # TODO: Store normals if using custom normals
                 self.branches_uvs.append(uv)
-                
+                 
                 if j == 0:
                     first_vertex_data = (vertex, normal, uv)
-
-            # Duplicate first vertex for UV continuity
+                     
             if first_vertex_data:
                 self.branches_verts.append(first_vertex_data[0])
-                # self.branches_normals.append(first_vertex_data[1])
                 self.branches_uvs.append(Vector((1.0, first_vertex_data[2].y)))
 
-            # Store section info for children
             sections.append({
                 'origin': section_origin.copy(),
-                'orientation': section_orientation.copy(), # Euler
+                'orientation': section_orientation.copy(),
                 'radius': section_radius
             })
-
-            # Move origin for next section
-            # Three.js: new THREE.Vector3(0, sectionLength, 0).applyEuler(sectionOrientation)
+             
+            # Move Origin
             move_step = Vector((0, section_length, 0))
             move_step.rotate(section_orientation)
             section_origin += move_step
-
-            # Perturb orientation (Gnarliness)
+             
+            # Gnarliness (Perturb Orientation) - Consumes rng_geo
             gnarliness_val = self.options.branch.gnarliness.get(branch.level, 0.1)
-            # gnarliness math from JS: Math.max(1, 1 / Math.sqrt(sectionRadius)) * gnarliness
             if section_radius > 0:
                 gnarliness_scale = max(1.0, 1.0 / math.sqrt(section_radius)) * gnarliness_val
             else:
                 gnarliness_scale = gnarliness_val
-            
-            # Random perturbations
-            rx = self.rng.random(gnarliness_scale, -gnarliness_scale)
-            rz = self.rng.random(gnarliness_scale, -gnarliness_scale)
-            
-            # sectionOrientation.x += rx ...
-            # Blender Euler is accessible by .x .y .z
-            # But direct Euler manipulation can be susceptible to Gimbal lock differently.
-            # Three.js does simple addition on Euler components here.
-            
-            new_x = section_orientation.x + rx
-            new_z = section_orientation.z + rz
-            section_orientation.x = new_x
-            section_orientation.z = new_z
+                 
+            rx = rng_geo.random(gnarliness_scale, -gnarliness_scale) # Use local rng_geo
+            rz = rng_geo.random(gnarliness_scale, -gnarliness_scale)
+             
+            section_orientation.x += rx
+            section_orientation.z += rz
 
             # Apply forces (Twist and Growth Force)
             # JS: qSection.makeRotationFromEuler(sectionOrientation)
@@ -210,25 +203,6 @@ class TreeGenerator:
             # angle = diff.angle
             
             # Simpler approach: slerp with factor?
-            # We need the angle between the two quaternions.
-            # There isn't a direct "angle_to" in mathutils.Quaternion (it has .angle which is the w-construct angle)
-            # We can use dot product or rotation_difference angle.
-            
-            # q_section.slerp(q_force, factor)
-            # We need to compute factor based on step/total_angle
-            
-            # Let's approximate or just use slerp with a small fixed factor if hard?
-            # No, let's try to match logic. 
-            # q_section is current, q_force is target.
-            
-            # We can just apply the force as a small rotation? 
-            # JS: qSection becomes the result.
-            
-            current_up = Vector((0,1,0))
-            current_up.rotate(q_section)
-            # Angle between current up and force dir?
-            
-            # Let's trust Blender's slerp works by t [0,1].
             # We need to know 't'.
             # t = step / total_angle.
             # How to get total_angle between two quaternions?
@@ -239,10 +213,10 @@ class TreeGenerator:
                 # Use -q_force to take shortest path and ensure positive dot
                 # q_force_target = -q_force # Unary negation of quat?
                 # mathutils Quaternion supports negation
-                 q_force_target = -q_force
-                 dot = -dot
+                q_force_target = -q_force
+                dot = -dot
             else:
-                 q_force_target = q_force
+                q_force_target = q_force
 
             if dot > 0.9999:
                 pass # close enough
@@ -254,14 +228,60 @@ class TreeGenerator:
                     q_section.slerp(q_force_target, t)
             
             section_orientation = q_section.to_euler()
+             
+            # Spawn Children (Recursion)
+            # Use the pre-calculated slots from rng_struct pass
+            if i in child_branch_slots:
+                child_info = child_branch_slots[i]
+                # Seed derivation
+                child_seed = (seed + i * 31337 + branch.level * 100003) & 0xFFFFFFFF
+                 
+                # Calculate child orientation based on current section's orientation and child_info's radial_angle
+                q1 = Quaternion(Vector((1, 0, 0)), math.radians(self.options.branch.angle.get(child_info['level'], 60)))
+                q2 = Quaternion(Vector((0, 1, 0)), child_info['radial_angle'])
+                q3 = section_orientation.to_quaternion()
+                final_quat = q3 @ q2 @ q1
+                child_orientation = final_quat.to_euler()
 
-        # Generate Indices (Faces)
+                # Calculate child radius based on current section's radius
+                child_radius = child_info['radius_scale'] * section_radius
+                 
+                # Calculate child length
+                child_length = child_info['length']
+                if self.options.type == TreeType.Evergreen:
+                    # This logic needs to be consistent with how child_branch_start was used
+                    # in calculate_child_branches to determine section_idx.
+                    # For now, let's assume child_info doesn't contain child_branch_start directly.
+                    # If it did, we'd use (1.0 - child_branch_start)
+                    # For now, we'll use a simplified approach or rely on the default length.
+                    pass # Evergreen length adjustment is complex without child_branch_start here.
+
+                new_branch = Branch(
+                    origin=section_origin.copy(), # Use current section's origin
+                    orientation=child_orientation,
+                    length=child_length,
+                    radius=child_radius,
+                    level=child_info['level'],
+                    sectionCount=child_info['sectionCount'],
+                    segmentCount=child_info['segmentCount']
+                )
+                new_branch.seed = child_seed
+                self.branch_queue.append(new_branch)
+                 
+        # Generate Indices
         self.generate_branch_indices(index_offset, branch)
 
-        # Decide on next steps (Child branches or leaves)
+        # Handle Deciduous Tip Branch
         if self.options.type == TreeType.Deciduous:
             last_section = sections[-1]
+            # If not max level, extend?
+            # EZ Tree logic: If not max level, we add a tip branch via queue?
+            # Or if max level, add leaf?
             if branch.level < self.options.branch.levels:
+                # Tip is a child branch
+                # Seed for tip? Use end of section hash?
+                tip_seed = (seed + 999999) & 0xFFFFFFFF
+                 
                 self.branch_queue.append(Branch(
                     origin=last_section['origin'],
                     orientation=last_section['orientation'],
@@ -269,16 +289,68 @@ class TreeGenerator:
                     radius=last_section['radius'],
                     level=branch.level + 1,
                     sectionCount=branch.sectionCount,
-                    segmentCount=branch.segmentCount
+                    segmentCount=branch.segmentCount,
+                    seed=tip_seed
                 ))
             else:
-                self.generate_leaf(last_section['origin'], last_section['orientation'])
+                # Tip Leaf
+                # Use rng_geo? Or logic? 
+                # Usually tip leaf handled by generate_leaf
+                self.generate_leaf(last_section['origin'], last_section['orientation'], rng_geo)
 
+        # Leaves along branch?
+        # Only at max level?
         if branch.level == self.options.branch.levels:
-            self.generate_leaves(sections)
+            self.generate_leaves(sections, rng_geo)
         elif branch.level < self.options.branch.levels:
-             child_count = self.options.branch.children.get(branch.level, 0)
-             self.generate_child_branches(child_count, branch.level + 1, sections)
+            # Logic for "Leaves on branches"? 
+            # EZ Tree usually leaves only at max level plus tips?
+            # But if options say so? 
+            # Let's stick to existing logic:
+            # existing logic: check child_count?
+            # Wait, `generate_child_branches` handles branches.
+            # `generate_leaves` handles leaves.
+            # In original code, `generate_leaves` was called if `level == max`.
+            # And `child branches` if `level < max`.
+            pass
+
+    def calculate_sections(self, branch, rng):
+        # Just placeholder if any logic needed rng
+        # Currently length etc passed in Branch.
+        pass
+
+    def calculate_child_branches(self, branch, rng):
+        # Returns dict {section_index: branch_info}
+        child_branches = {}
+        count = self.options.branch.children.get(branch.level, 0)
+        level = branch.level + 1
+        
+        radial_offset = rng.random(1, 0)
+        
+        branch_slots = {}
+        for i in range(count):
+             start_val = self.options.branch.start.get(level, 0.3)
+             child_branch_start = rng.random(1.0, start_val)
+             section_idx = math.floor(child_branch_start * branch.sectionCount)
+             section_idx = max(0, min(section_idx, branch.sectionCount - 1))
+             
+             # Store this decision
+             radial_angle = 2.0 * math.pi * (radial_offset + i / count)
+             
+             length = self.options.branch.length.get(level, 5)
+             if self.options.type == TreeType.Evergreen:
+                 length *= (1.0 - child_branch_start) # Evergreen length depends on start position
+             
+             branch_slots[section_idx] = {
+                 'radial_angle': radial_angle,
+                 'level': level,
+                 'length': length,
+                 'radius_scale': self.options.branch.radius.get(level, 0.5), 
+                 'sectionCount': self.options.branch.sections.get(level, 6),
+                 'segmentCount': self.options.branch.segments.get(level, 4)
+             }
+             
+        return branch_slots
 
     def generate_branch_indices(self, index_offset, branch):
         # N = segmentCount + 1 (because of duplicated vertex for UVs)
@@ -379,14 +451,14 @@ class TreeGenerator:
                 segmentCount=self.options.branch.segments.get(level, 4)
             ))
 
-    def generate_leaves(self, sections):
-        radial_offset = self.rng.random(1, 0)
+    def generate_leaves(self, sections, rng):
+        radial_offset = rng.random(1, 0)
         
         leaf_count = self.options.leaves.count
         leaf_start_limit = self.options.leaves.start
         
         for i in range(leaf_count):
-            leaf_start = self.rng.random(1.0, leaf_start_limit)
+            leaf_start = rng.random(1.0, leaf_start_limit)
             
             # Interpolation (Same as branches roughly)
             section_idx = math.floor(leaf_start * (len(sections) - 1))
@@ -416,16 +488,16 @@ class TreeGenerator:
             final_quat = q3 @ q2 @ q1
             leaf_orientation = final_quat.to_euler()
             
-            self.generate_leaf(origin, leaf_orientation)
+            self.generate_leaf(origin, leaf_orientation, rng)
 
-    def generate_leaf(self, origin, orientation):
+    def generate_leaf(self, origin, orientation, rng):
         # Create a single or double quad
         
         size = self.options.leaves.size
         # Variance
         variance = self.options.leaves.sizeVariance
         # random(var, -var)
-        scale = 1 + self.rng.random(variance, -variance)
+        scale = 1 + rng.random(variance, -variance)
         leaf_size = size * scale
         
         W = leaf_size
@@ -461,10 +533,6 @@ class TreeGenerator:
             self.leaves_verts.extend(transformed_verts)
             
             # UVs
-            # 0: (0, 1)
-            # 1: (0, 0)
-            # 2: (1, 0)
-            # 3: (1, 1)
             self.leaves_uvs.extend([
                 Vector((0, 1)),
                 Vector((0, 0)),
@@ -490,15 +558,6 @@ class TreeGenerator:
         bm = bmesh.new()
         bm.from_mesh(mesh_branches)
         uv_layer = bm.loops.layers.uv.verify()
-        
-        # Iterating loops to assign UVs is slow for large meshes, but simplest to implement
-        # self.branches_uvs has one per vertex. But standard Blender UVs are per-loop.
-        # My implementation of `branches_verts` duplicated vertices on the seam.
-        # So number of vertices should equal number of UV coordinates.
-        # However, `from_pydata` creates vertices.
-        # We need to map vertex index to UV.
-        
-        bm.loops.layers.uv.verify()
         
         for face in bm.faces:
             for loop in face.loops:
@@ -526,4 +585,51 @@ class TreeGenerator:
         bm_l.to_mesh(mesh_leaves)
         bm_l.free()
         
-        return mesh_branches, mesh_leaves
+    def calculate_child_branches(self, branch, rng):
+        # Calculate where children should be placed
+        branch_slots = {}
+        child_count = self.options.branch.children.get(branch.level, 0)
+        
+        # Next level properties
+        level = branch.level + 1
+        
+        radial_offset = rng.random(1, 0)
+        
+        # If no children or max level reached in lookahead, return empty
+        if child_count == 0:
+            return branch_slots
+            
+        for i in range(child_count):
+            start_val = self.options.branch.start.get(level, 0.3)
+            child_branch_start = rng.random(1.0, start_val)
+            
+            # Map start (0.0-1.0) to section index
+            section_idx = math.floor(child_branch_start * branch.sectionCount)
+            section_idx = max(0, min(section_idx, branch.sectionCount - 1))
+            
+            # Radial angle
+            radial_angle = 2.0 * math.pi * (radial_offset + i / child_count)
+            
+            # Store info. Note: Origin/Orientation must be calculated from the parent section at generation time.
+            # We only store the "Intent" to spawn here.
+            # We can calculate 'orientation' based on parent later.
+            # But the 'new_branch' constructor needs origin/orient.
+            # We will calculate that inside the loop using this slot info.
+            
+            branch_slots[section_idx] = {
+                'radial_angle': radial_angle,
+                'level': level,
+                'length': self.options.branch.length.get(level, 5),
+                'radius': self.options.branch.radius.get(level, 0.5) * branch.radius, # Approx radius scaling? EZ Tree logic: radius * radiusMod
+                'sectionCount': self.options.branch.sections.get(level, 6),
+                'segmentCount': self.options.branch.segments.get(level, 4)
+            }
+            # Note on radius: EZ Tree `radius` option is usually absolute or multiplier?
+            # In `generate_child_branches` original:
+            # radius = options.radius[level] * parent_radius_at_split.
+            
+        return branch_slots
+
+    def calculate_sections(self, branch, rng):
+        pass
+

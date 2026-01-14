@@ -177,15 +177,18 @@ class TreeGenerator:
             q_twist = Quaternion(Vector((0, 1, 0)), twist_angle)
             
             # Force
+            strength = self.options.branch.force['strength']
+            force_vector_vals = self.options.branch.force['direction']
             force_dir = Vector((
-                self.options.branch.force['direction']['x'],
-                self.options.branch.force['direction']['y'],
-                self.options.branch.force['direction']['z']
+                force_vector_vals['x'],
+                force_vector_vals['y'],
+                force_vector_vals['z']
             ))
             
-            # qForce.setFromUnitVectors(Vector3(0, 1, 0), force_dir)
-            # Blender: rotation_difference between two vectors
-            # rotation_difference(v1, v2) -> Calculates rotation to transform v1 into v2
+            if strength < 0:
+                force_dir = -force_dir
+                strength = -strength
+                
             q_force = Vector((0, 1, 0)).rotation_difference(force_dir)
             
             # qSection.multiply(qTwist)
@@ -193,8 +196,6 @@ class TreeGenerator:
             
             # qSection.rotateTowards(qForce, strength/radius)
             # Emulate rotateTowards
-            # Determine angular distance to qForce
-            strength = self.options.branch.force['strength']
             step = strength / section_radius if section_radius > 0.0001 else 0
             
             # Slerp towards qForce by step amount?
@@ -249,7 +250,7 @@ class TreeGenerator:
                 # angle = 2 * acos(dot)
                 theta = 2 * math.acos(min(max(dot, -1), 1))
                 if theta > 0.0001:
-                    t = min(1, step / theta)
+                    t = max(0, min(1, step / theta))
                     q_section.slerp(q_force_target, t)
             
             section_orientation = q_section.to_euler()

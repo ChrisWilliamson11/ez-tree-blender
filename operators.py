@@ -3,7 +3,26 @@ import bmesh
 from math import radians
 from .generator import TreeGenerator
 from .utils import props_to_options
-from .utils_copy import copy_props
+
+
+def copy_props(source, target):
+    """Recursively copy properties from source to target PropertyGroup."""
+    for prop_name in source.bl_rna.properties.keys():
+        if prop_name in {"rna_type", "name"}:
+            continue
+            
+        source_val = getattr(source, prop_name)
+        
+        # If it's a PropertyGroup (has bl_rna), recurse
+        if hasattr(source_val, "bl_rna"):
+            target_val = getattr(target, prop_name)
+            copy_props(source_val, target_val)
+        else:
+            try:
+                setattr(target, prop_name, source_val)
+            except (AttributeError, TypeError):
+                pass
+
 
 def update_existing_tree(obj):
     if not obj or not hasattr(obj, "eztree_props"):
